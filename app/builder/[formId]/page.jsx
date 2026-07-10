@@ -10,6 +10,7 @@ import {
   uid,
 } from "@/lib/forms-store";
 import { useHydrated } from "@/hooks/use-hydrated";
+import { useAdminGuard } from "@/hooks/use-admin-guard";
 
 const FIELD_TYPES = [
   { value: "text", label: "Short text" },
@@ -44,22 +45,35 @@ function labelFor(t) {
 }
 
 export default function BuilderPage() {
-  const { formId } = useParams(); // URL se form ID nikaalte hain, jaise /builder/form_abc123
-  const router = useRouter();     // Navigation ke liye (redirect kar sakte hain)
-  const hydrated = useHydrated(); // localStorage ready hai ya nahi
-  const [form, setForm] = useState(null);   // Current form ka poora data
-  const [saved, setSaved] = useState(false); // "Saved" confirmation text dikhane ke liye
+  const { formId } = useParams();
+  const router = useRouter();
+  const hydrated = useHydrated();
+  const { authorized } = useAdminGuard();
+  const [form, setForm] = useState(null);
+  const [saved, setSaved] = useState(false);
 
-  // Jab page load hota hai: localStorage se form dhundho aur state mein rakho
   useEffect(() => {
-    if (!hydrated) return;      // localStorage abhi ready nahi, ruko
-    const f = getForm(formId);  // ID se form dhundo
-    if (!f) {
-      router.push("/");  // Form nahi mila? Dashboard pe bhejo
+    if (!hydrated || !authorized) return;
+    
+    // Agar naya form bana rahe hain, to localStorage se mat dhundo
+    if (formId === "new") {
+      setForm({
+        id: uid("form"), // Temporary ID, save hone par pakki ho jayegi
+        title: "Untitled form",
+        description: "",
+        fields: [],
+        style: defaultStyle,
+      });
       return;
     }
-    setForm(f); // Form mila! State mein save karo
-  }, [hydrated, formId, router]);
+
+    const f = getForm(formId);
+    if (!f) {
+      router.push("/");
+      return;
+    }
+    setForm(f);
+  }, [hydrated, authorized, formId, router]);
 
   // Form ki koi bhi property update karne ke liye shortcut function.
   // "patch" mein wahi properties bhejo jo badalni hain.
@@ -67,30 +81,29 @@ export default function BuilderPage() {
   const update = (patch) =>
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
 
-  // Ek specific field ke andar koi property badalna ho to yeh use karo.
-  // Baaki saari fields wahi rehti hain, sirf matching field update hoti hai.
-  const updateField = (id, patch) =>
-    setForm((prev) =>
-      prev
-        ? { ...prev, fields: prev.fields.map((f) => (f.id === id ? { ...f, ...patch } : f)) }
-        : prev
-    );
+  // --- Actions ---
 
-  // Left panel mein koi field type click karne par yeh function chalta hai.
-  // Naya field object banata hai aur form ke fields array mein add karta hai.
   const addField = (type) => {
-    if (!form) return;
-    const base = { id: uid("f"), type, label: labelFor(type), required: false };
-    // Dropdown, radio aur checkbox ke liye default options zaroori hain
+    const f = {
+      id: uid("f"),
+      type,
+      label: labelFor(type),
+      required: false,
+    };
     if (type === "dropdown" || type === "radio" || type === "checkbox") {
-      base.options = ["Option 1", "Option 2"];
+      f.options = ["Option 1"];
     }
-    update({ fields: [...form.fields, base] });
+    update({ fields: [...form.fields, f] });
   };
 
-  // "Remove" button click hone par us field ko fields array se hata do
-  const removeField = (id) =>
-    form && update({ fields: form.fields.filter((f) => f.id !== id) });
+  const removeField = (id) => {
+    update({ fields: form.fields.filter((f) => f.id !== id) });
+  };
+
+  const updateField = (id, patch) => {
+    const next = form.fields.map((f) => (f.id === id ? { ...f, ...patch } : f));
+    update({ fields: next });
+  };
 
   // ↑ ↓ buttons ke liye: field ko array mein upar ya neeche shift karo.
   // dir = -1 matlab upar, dir = +1 matlab neeche.
@@ -106,18 +119,24 @@ export default function BuilderPage() {
   };
 
   // "Save" button: current form state ko localStorage mein likhta hai.
-  // "Saved" text 1.5 second ke liye dikhata hai phir gayab ho jaata hai.
   const handleSave = () => {
     if (!form) return;
     saveForm(form);
     setSaved(true);
+    
+    // Agar "new" URL par thay, to actual ID wale URL par URL replace karo
+    // Isse form localStorage mein safe rahega refresh par
+    if (formId === "new") {
+      router.replace(`/builder/${form.id}`);
+    }
+    
     setTimeout(() => setSaved(false), 1500);
   };
 
-  if (!form) {
+  if (!authorized || !form) {
     return (
       <div className="grid min-h-screen place-items-center text-neutral-500">
-        Loading form…
+        Loading builder…
       </div>
     );
   }
@@ -138,18 +157,36 @@ export default function BuilderPage() {
             />
           </div>
           <div className="flex items-center gap-2">
-            {saved && <span className="text-xs text-emerald-600">Saved</span>}
-            <Link
-              href={`/form/${form.id}`}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+            {formId !== "new" && (
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/form/${form.id}`;
+                  navigator.clipboard.writeText(url);
+                  alert("Share Link copied to clipboard!\n\n" + url);
+                }}
+                className="rounded-md border border-neutral-300 bg-neutral-50 px-4 py-2 text-sm font-medium text-neutral-900 transition hover:bg-neutral-100"
+              >
+                Share Link
+              </button>
+            )}
+            <a
+              href={formId === "new" ? "#" : `/form/${form.id}`}
+              target="_blank"
+              onClick={(e) => {
+                if (formId === "new") {
+                  e.preventDefault();
+                  alert("Please save the form first to preview it.");
+                }
+              }}
+              className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50"
             >
               Preview
-            </Link>
+            </a>
             <button
               onClick={handleSave}
-              className="rounded-md bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+              className="min-w-[5rem] rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700"
             >
-              Save
+              {saved ? "Saved" : "Save"}
             </button>
           </div>
         </div>

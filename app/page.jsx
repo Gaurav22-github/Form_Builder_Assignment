@@ -10,10 +10,14 @@ import {
   listForms,
 } from "@/lib/forms-store";
 import { useHydrated } from "@/hooks/use-hydrated";
+import { useAdminGuard } from "@/hooks/use-admin-guard";
+import { adminLogout } from "@/lib/auth";
 
 export default function HomePage() {
   const hydrated = useHydrated();
   const router = useRouter();
+  const { authorized } = useAdminGuard();
+
   const [forms, setForms] = useState(() =>
     typeof window === "undefined" ? [] : listForms()
   );
@@ -21,9 +25,17 @@ export default function HomePage() {
   const refresh = () => setForms(listForms());
 
   const handleCreate = () => {
-    const f = createForm();
-    router.push(`/builder/${f.id}`);
+    // Navigate to a new builder instead of auto-saving it immediately
+    router.push(`/builder/new`);
   };
+
+  if (!authorized) {
+    return (
+      <div className="grid min-h-screen place-items-center text-neutral-500">
+        Checking access…
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900">
@@ -37,12 +49,24 @@ export default function HomePage() {
               Formcraft
             </span>
           </Link>
-          <button
-            onClick={handleCreate}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700"
-          >
-            New form
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs text-neutral-500 sm:block">Admin Panel</span>
+            <button
+              onClick={handleCreate}
+              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700"
+            >
+              New form
+            </button>
+            <button
+              onClick={() => {
+                adminLogout();
+                router.push("/admin-login");
+              }}
+              className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </header>
 
@@ -127,6 +151,16 @@ export default function HomePage() {
                   >
                     Edit
                   </Link>
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}/form/${f.id}`;
+                      navigator.clipboard.writeText(url);
+                      alert("Share Link copied to clipboard!\n\n" + url);
+                    }}
+                    className="rounded-md border border-neutral-300 bg-neutral-50 px-3 py-1.5 font-medium text-neutral-900 hover:bg-neutral-100"
+                  >
+                    Share
+                  </button>
                   <Link
                     href={`/form/${f.id}`}
                     className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 hover:bg-neutral-100"

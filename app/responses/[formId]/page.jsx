@@ -5,10 +5,12 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { getForm, listResponses } from "@/lib/forms-store";
 import { useHydrated } from "@/hooks/use-hydrated";
+import { useAdminGuard } from "@/hooks/use-admin-guard";
 
 export default function ResponsesPage() {
   const { formId } = useParams(); // URL se form ID nikaalte hain
   const hydrated = useHydrated(); // localStorage ready check
+  const { authorized } = useAdminGuard();
   const router = useRouter();     // Redirect ke liye
 
   const [form, setForm] = useState(null);       // Form ka structure (field names ke liye)
@@ -16,7 +18,7 @@ export default function ResponsesPage() {
 
   // Page load hone par form aur uske responses localStorage se lo
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !authorized) return;
     const f = getForm(formId);
     if (!f) {
       router.push("/"); // Form nahi mila? Home pe bhejo
@@ -24,7 +26,7 @@ export default function ResponsesPage() {
     }
     setForm(f);
     setResponses(listResponses(formId)); // Is form ke saare responses lo
-  }, [hydrated, formId, router]);
+  }, [hydrated, authorized, formId, router]);
 
   /**
    * CSV string generate karta hai saare responses se.
@@ -79,10 +81,11 @@ export default function ResponsesPage() {
     URL.revokeObjectURL(url);                          // Memory cleanup
   };
 
-  if (!form) {
+  // Auth check hone tak loading screen
+  if (!authorized || !form) {
     return (
       <div className="grid min-h-screen place-items-center text-neutral-500">
-        Loading…
+        Loading responses…
       </div>
     );
   }
